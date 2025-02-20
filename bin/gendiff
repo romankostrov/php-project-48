@@ -3,36 +3,36 @@
 
 // gendiff.php - Исполняемый файл для утилиты gendiff
 
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/../vendor/autoload.php'; // Подключаем автозагрузчик Composer
 
-use Docopt;
+use Docopt\Docopt; 
 
-$usage = <<<'DOCOPT'
+const DOC = <<<DOC
+gendiff -h
+
 Generate diff
 
 Usage:
   gendiff (-h|--help)
   gendiff (-v|--version)
+  gendiff [--format <fmt>] <firstFilePath> <secondFilePath>
 
 Options:
-  -h --help                     Show this screen
-  -v --version                  Show version
-DOCOPT;
+  -h --help                    Show this screen
+  -v --version                 Show version
+  --format <fmt>               Report format [default: stylish] Examples: stylish, plain, json
 
-try {
-    $args = new Docopt($usage);
-    $arguments = $args->handle( $_SERVER['argv'] );
+Report formats:
+    --format <fmt>
+        stylish                Show changes in files marked with symbols "+/-"
+        plain                  Show changes in files explained by the text
+        json                   Show changes in files as a JSON string
+DOC;
 
-    if ($arguments['--help']) {
-        echo $usage;
-        exit(0);
-    }
+$args = \Docopt::handle(DOC, ['version' => '0.1']);
 
-    if ($arguments['--version']) {
-        echo "gendiff 0.1.0\\n"; // Заглушка для версии
-        exit(0);
-    }
+$firstFilePath = $args['<firstFilePath>'];
+$secondFilePath = $args['<secondFilePath>'];
+$format = $args["--format"];
 
-} catch (Exception $e) {
-    echo $e->getMessage();
-}
+print_r(genDiff($firstFilePath, $secondFilePath, $format));
