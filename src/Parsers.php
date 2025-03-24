@@ -1,18 +1,36 @@
 <?php
 
-namespace Differ\Parsers;
+namespace Differ\Parser;
 
-use Symfony\Component\Yaml\Yaml;
-
-function parse(string $data, string $type): object
+function parseFile(string $filePath): array
 {
-    switch ($type) {
-        case 'json':
-            return json_decode($data, false, 512, JSON_THROW_ON_ERROR);
-        case 'yaml':
-        case 'yml':
-            return Yaml::parse($data, Yaml::PARSE_OBJECT_FOR_MAP);
-        default:
-            throw new \Exception("The type: '{$type}' is not supported");
+    if (!file_exists($filePath)) {
+        throw new \Exception("Файл не найден: {$filePath}");
     }
+
+    $fileContent = file_get_contents($filePath);
+
+    // Определите тип файла (по расширению или содержимому)
+    $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+
+    switch ($fileExtension) {
+        case 'json':
+            $data = json_decode($fileContent, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception("Ошибка при декодировании JSON: " . json_last_error_msg());
+            }
+            break;
+        // TODO:  Добавьте поддержку YAML при необходимости
+        // case 'yaml':
+        // case 'yml':
+        //     $data = yaml_parse($fileContent);
+        //     if ($data === false) {
+        //         throw new \Exception("Ошибка при парсинге YAML");
+        //     }
+        //     break;
+        default:
+            throw new \Exception("Неподдерживаемый формат файла: {$fileExtension}");
+    }
+
+    return $data;
 }
