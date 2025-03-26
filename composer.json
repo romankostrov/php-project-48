@@ -6,7 +6,16 @@
         "psr-4": {
             "Hexlet\\Code\\": "src/",
             "Differ\\": "src/"
-        }
+        },
+        "files": [
+            "src/Differ.php",
+            "src/Parser.php",
+            "src/Formatter.php",
+            "src/Formatters/Json.php",
+            "src/Formatters/Stylish.php",
+            "src/Formatters/Plain.php",
+            "tests/DiffTest.php"
+        ]
     },
     "authors": [
         {
@@ -23,6 +32,7 @@
         "docopt/docopt": "^1.0"
     },
     "require-dev": {
-        "squizlabs/php_codesniffer": "^3.11"
+        "squizlabs/php_codesniffer": "^3.11",
+        "phpunit/phpunit": "^11.2"
     }
 }

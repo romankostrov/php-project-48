@@ -2,74 +2,105 @@
 
 namespace Differ\Formatters\Stylish;
 
-use function Funct\Collection\flattenAll;
+use const Differ\Differ\ADDED;
+use const Differ\Differ\DELETED;
+use const Differ\Differ\CHANGED;
+use const Differ\Differ\NESTED;
+use const Differ\Differ\UNCHANGED;
 
-function format(array $diff): string
+const SPACECOUNT = 4;
+const REPLACER = ' ';
+const COMPARE_TEXT_SYMBOL_MAP = [
+    ADDED => '+',
+    DELETED => '-',
+    CHANGED => ' ',
+    NESTED => ' ',
+    UNCHANGED => ' ',
+];
+
+function render(array $data): string
 {
-    $iter = function (array $diff, int $depth) use (&$iter): array {
-        return array_map(function ($node) use ($depth, $iter) {
-            [
-                'key' => $key,
-                'type' => $type,
-                'oldValue' => $oldValue,
-                'newValue' => $newValue,
-                'children' => $children
-            ] = $node;
+    $result = iter($data['children']);
+    return $result;
+}
 
-            $indent = makeIndent($depth - 1);
+function iter(array $value, int $depth = 1): string
+{
+    $func = function ($val) use ($depth) {
+        if (!is_array($val)) {
+            return toString($val);
+        }
 
-            switch ($type) {
-                case 'complex':
-                    $indentAfter = makeIndent($depth);
-                    return ["{$indent}    {$key}: {", $iter($children, $depth + 1), "{$indentAfter}}"];
-                case 'added':
-                    $preparedNewValue = prepareValue($newValue, $depth);
-                    return "{$indent}  + {$key}: {$preparedNewValue}";
-                case 'removed':
-                    $preparedOldValue = prepareValue($oldValue, $depth);
-                    return "{$indent}  - {$key}: {$preparedOldValue}";
-                case 'unchanged':
-                    $preparedNewValue = prepareValue($newValue, $depth);
-                    return "{$indent}    {$key}: {$preparedNewValue}";
-                case 'updated':
-                    $preparedOldValue = prepareValue($oldValue, $depth);
-                    $preparedNewValue = prepareValue($newValue, $depth);
-                    $addedLine = "{$indent}  + {$key}: {$preparedNewValue}";
-                    $deletedLine = "{$indent}  - {$key}: {$preparedOldValue}";
-                    return implode("\n", [$deletedLine, $addedLine]);
-                default:
-                    throw new \Exception("This type: {$type} is not supported.");
-            };
-        }, $diff);
+        if (!array_key_exists(0, $val) && !array_key_exists('type', $val)) {
+            return toString($val);
+        }
+
+        $compare = $val['type'];
+        $delete = COMPARE_TEXT_SYMBOL_MAP[DELETED];
+        $add = COMPARE_TEXT_SYMBOL_MAP[ADDED];
+        $compareSymbol = COMPARE_TEXT_SYMBOL_MAP[$compare];
+        $key = $val['key'];
+
+        return match ($compare) {
+            CHANGED => structure($val['value1'], $key, $delete, $depth) . structure($val['value2'], $key, $add, $depth),
+            NESTED => structure(iter($val['children'], $depth + 1), $key, $compareSymbol, $depth),
+            default => structure($val['value'], $key, $compareSymbol, $depth),
+        };
     };
-    return implode("\n", flattenAll(['{', $iter($diff, 1), '}']));
+
+    $result = array_map($func, $value);
+    $closeBracketIndentSize = $depth * SPACECOUNT;
+    $closeBracketIndent = $closeBracketIndentSize > 0 ? str_repeat(REPLACER, $closeBracketIndentSize - SPACECOUNT) : '';
+
+    return "{\n" . implode($result) . "{$closeBracketIndent}}";
 }
 
-function prepareValue($value, int $depth): string
+function structure(mixed $value, string $key, string $compareSymbol, int $depth): string
 {
-    if (is_bool($value)) {
-        return $value ? 'true' : 'false';
-    }
-    if (is_null($value)) {
-        return 'null';
-    }
-    if (!is_object($value)) {
-        return $value;
+    $indentSize = ($depth * SPACECOUNT) - 2;
+    $currentIndent = str_repeat(REPLACER, $indentSize);
+    $depthNested = $depth + 1;
+    $valueStructured = depthStructuring($value, $depthNested);
+
+    $result = sprintf(
+        "%s%s %s: %s\n",
+        $currentIndent,
+        $compareSymbol,
+        $key,
+        $valueStructured,
+    );
+    return $result;
+}
+function depthStructuring(mixed $value, int $depth): string
+{
+    if (!is_array($value)) {
+        return toString($value);
     }
 
-    $keys = array_keys(get_object_vars($value));
-    $indent = makeIndent($depth);
+    $indentSize = $depth * SPACECOUNT;
+    $currentIndent = str_repeat(REPLACER, $indentSize);
 
-    $lines = array_map(function ($key) use ($value, $depth, $indent): string {
-        $childrenValue = prepareValue($value->$key, $depth + 1);
-        return "{$indent}    {$key}: {$childrenValue}";
-    }, $keys);
+    $fun = function ($key, $val) use ($depth, $currentIndent) {
+        return sprintf(
+            "%s%s: %s\n",
+            $currentIndent,
+            $key,
+            depthStructuring($val, $depth + 1),
+        );
+    };
 
-    $preparedValue = implode("\n", $lines);
-    return "{\n{$preparedValue}\n{$indent}}";
+    $result = array_map($fun, array_keys($value), $value);
+    $closeBracketIndent = str_repeat(REPLACER, $indentSize - SPACECOUNT);
+
+    return "{\n" . implode($result) . "{$closeBracketIndent}}";
 }
 
-function makeIndent(int $depth): string
+function toString(mixed $value): string
 {
-    return str_repeat(" ", 4 * $depth);
+    return match (true) {
+        $value === true => 'true',
+        $value === false => 'false',
+        is_null($value) => 'null',
+        default => trim((string) $value, "'")
+    };
 }

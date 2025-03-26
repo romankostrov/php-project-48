@@ -2,57 +2,79 @@
 
 namespace Differ\Formatters\Plain;
 
-use function Funct\Collection\flattenAll;
+use const Differ\Differ\ADDED;
+use const Differ\Differ\CHANGED;
+use const Differ\Differ\DELETED;
+use const Differ\Differ\NESTED;
+use const Differ\Differ\UNCHANGED;
 
-function format(array $diff): string
+const COMPARE_TEXT_MAP = [
+    ADDED => 'added',
+    DELETED => 'removed',
+    CHANGED => 'updated',
+    UNCHANGED => '',
+    NESTED => '[complex value]',
+];
+
+function render(array $data): string
 {
-    $iter = function ($diff, $ancestors) use (&$iter): array {
-        return array_map(function ($node) use ($ancestors, $iter) {
-            [
-                'key' => $key,
-                'type' => $type,
-                'oldValue' => $oldValue,
-                'newValue' => $newValue,
-                'children' => $children
-            ] = $node;
-
-            $pathToProperty = implode('.', [...$ancestors, $key]);
-
-            switch ($type) {
-                case 'complex':
-                    return $iter($children, [...$ancestors, $key]);
-                case 'added':
-                    $preparedNewValue = prepareValue($newValue);
-                    return "Property '{$pathToProperty}' was added with value: {$preparedNewValue}";
-                case 'removed':
-                    return "Property '{$pathToProperty}' was removed";
-                case 'unchanged':
-                    return [];
-                case 'updated':
-                    $preparedOldValue = prepareValue($oldValue);
-                    $preparedNewValue = prepareValue($newValue);
-                    return "Property '{$pathToProperty}' was updated. From {$preparedOldValue} to {$preparedNewValue}";
-                default:
-                    throw new \Exception("This type: {$type} is not supported.");
-            }
-        }, $diff);
-    };
-    return implode("\n", flattenAll($iter($diff, [])));
+    $result = iter($data['children']);
+    return rtrim(implode($result), " \n");
 }
 
-function prepareValue($value): string
+function iter(array $value, array $acc = []): array
 {
-    if (is_bool($value)) {
-        return $value ? 'true' : 'false';
-    }
-    if (is_null($value)) {
-        return 'null';
-    }
-    if (is_object($value)) {
-        return '[complex value]';
-    }
-    if (is_string($value)) {
-        return "'{$value}'";
-    }
-    return (string) $value;
+    $func = function ($val) use ($acc) {
+
+        if (!is_array($val)) {
+            return toString($val);
+        }
+
+        if (!array_key_exists(0, $val) && !array_key_exists('type', $val)) {
+            return toString($val);
+        }
+
+        $key = $val['key'];
+        $compare = $val['type'];
+        $compareText = COMPARE_TEXT_MAP[$compare];
+        $accNew = [...$acc, ...[$key]];
+
+        return match ($compare) {
+            ADDED => sprintf(
+                "Property '%s' was %s with value: %s\n",
+                implode('.', $accNew),
+                $compareText,
+                toString($val['value']),
+            ),
+            DELETED => sprintf(
+                "Property '%s' was %s\n",
+                implode('.', $accNew),
+                $compareText,
+            ),
+            CHANGED => sprintf(
+                "Property '%s' was %s. From %s to %s\n",
+                implode('.', $accNew),
+                $compareText,
+                toString($val['value1']),
+                toString($val['value2']),
+            ),
+            NESTED => implode(iter($val['children'], $accNew)),
+            default => null,
+        };
+    };
+
+    $result = array_map($func, $value);
+    return $result;
+}
+
+function toString(mixed $value): string
+{
+    return match (true) {
+        $value === true => 'true',
+        $value === false => 'false',
+        is_null($value) => 'null',
+        is_array($value) || is_object($value) => '[complex value]',
+        is_string($value) => "'{$value}'",
+        default => trim((string) $value, "'")
+    };
 }

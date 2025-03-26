@@ -2,82 +2,96 @@
 
 namespace Differ\Differ;
 
-use function Differ\Parser\parseFile;
+use function Functional\sort;
+use function Differ\Formatter\format;
+use function Differ\Parser\parser;
 
-/**
- * Generates the difference between two data structures.
- *
- * @param array $firstData The first data structure (associative array).
- * @param array $secondData The second data structure (associative array).
- *
- * @return string The formatted difference as a string.
- */
-function genDiff(array $firstData, array $secondData): string
+const UNCHANGED = 'unchanged';
+const CHANGED = 'changed';
+const ADDED = 'added';
+const DELETED = 'deleted';
+const NESTED = 'nested';
+
+function genDiff(string $file1, string $file2, string $format = 'stylish'): string
 {
-    $diff = buildDiff($firstData, $secondData);
-    return formatDiff($diff);
+    ['extension' => $extension1, 'content' => $contentFile1] = getContents($file1);
+    ['extension' => $extension2, 'content' => $contentFile2]  = getContents($file2);
+
+    $valueFile1 = parser($extension1, $contentFile1);
+    $valueFile2 = parser($extension2, $contentFile2);
+
+    $valueDiff = buildDiff($valueFile1, $valueFile2);
+    $valueDiffWithRoot = addingRootNode($valueDiff);
+
+    return format($valueDiffWithRoot, $format);
 }
-
-/**
- * Builds a diff array representing the differences between two data structures.
- *
- * @param array $firstData The first data structure (associative array).
- * @param array $secondData The second data structure (associative array).
- *
- * @return array The diff array.
- */
-function buildDiff(array $firstData, array $secondData): array
+function getContents(string $path): array
 {
-    $keys1 = array_keys($firstData);
-    $keys2 = array_keys($secondData);
-    $allKeys = array_unique(array_merge($keys1, $keys2));
-    sort($allKeys);
-
-    $diff = [];
-    foreach ($allKeys as $key) {
-        if (array_key_exists($key, $firstData) && array_key_exists($key, $secondData)) {
-            if ($firstData[$key] === $secondData[$key]) {
-                $diff[] = ['key' => $key, 'type' => 'unchanged', 'value' => $firstData[$key]];
-            } else {
-                $diff[] = ['key' => $key, 'type' => 'changed', 'oldValue' => $firstData[$key], 'newValue' => $secondData[$key]];
-            }
-        } elseif (array_key_exists($key, $firstData)) {
-            $diff[] = ['key' => $key, 'type' => 'removed', 'value' => $firstData[$key]];
-        } else {
-            $diff[] = ['key' => $key, 'type' => 'added', 'value' => $secondData[$key]];
-        }
+    if (!file_exists($path)) {
+        throw new \Exception("Invalid file path: {$path}");
     }
 
-    return $diff;
+    return [
+        'extension' => pathinfo($path, PATHINFO_EXTENSION),
+        'content' => file_get_contents($path),
+    ];
+}
+function buildDiff(array $first, array $second): array
+{
+    $uniqueKeys = array_unique(array_merge(array_keys($first), array_keys($second)));
+    $sortedArray = sort($uniqueKeys, function ($first, $second) {
+        return $first <=> $second;
+    });
+
+    return array_map(function ($key) use ($first, $second) {
+        $valueFirst = $first[$key] ?? null;
+        $valueSecond = $second[$key] ?? null;
+
+        if (
+            (is_array($valueFirst) && !array_is_list($valueFirst)) &&
+            (is_array($valueSecond) && !array_is_list($valueSecond))
+        ) {
+            return [
+                'key' => $key,
+                'type' => NESTED,
+                'children' => buildDiff($valueFirst, $valueSecond),
+            ];
+        }
+
+        if (!array_key_exists($key, $first)) {
+            return [
+                'key' => $key,
+                'type' => ADDED,
+                'value' => $valueSecond,
+            ];
+        }
+
+        if (!array_key_exists($key, $second)) {
+            return [
+                'key' => $key,
+                'type' => DELETED,
+                'value' => $valueFirst,
+            ];
+        }
+
+        if ($valueFirst === $valueSecond) {
+            return [
+                'key' => $key,
+                'type' => UNCHANGED,
+                'value' => $valueFirst,
+            ];
+        }
+
+        return [
+            'key' => $key,
+            'type' => CHANGED,
+            'value1' => $valueFirst,
+            'value2' => $valueSecond,
+        ];
+    }, $sortedArray);
 }
 
-/**
- * Formats the diff array into a string representation.
- *
- * @param array $diff The diff array.
- *
- * @return string The formatted diff string.
- */
-function formatDiff(array $diff): string
+function addingRootNode(array $value): array
 {
-    $result = "{\n";
-    foreach ($diff as $item) {
-        switch ($item['type']) {
-            case 'unchanged':
-                $result .= "    {$item['key']}: {$item['value']}\n";
-                break;
-            case 'added':
-                $result .= "  + {$item['key']}: {$item['value']}\n";
-                break;
-            case 'removed':
-                $result .= "  - {$item['key']}: {$item['value']}\n";
-                break;
-            case 'changed':
-                $result .= "  - {$item['key']}: {$item['oldValue']}\n";
-                $result .= "  + {$item['key']}: {$item['newValue']}\n";
-                break;
-        }
-    }
-    $result .= "}";
-    return $result;
+    return ['type' => 'root', 'children' => $value];
 }
